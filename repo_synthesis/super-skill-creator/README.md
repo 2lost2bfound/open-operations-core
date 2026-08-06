@@ -35,11 +35,20 @@ ssg validate ./output/api-docs
 ssg security ./output/api-docs
 
 # Install to multiple platforms
-ssg install ./output/api-docs --platform claude-code --platform cursor
+ssg install ./output/api-docs --platform claude-code --platform cursor --apply
 
 # Scan project dependencies for crawl rules
 ssg scan-deps ./my-project
 ```
+
+`ssg install` is a dry run by default. Add `--apply` to install a new skill;
+add `--force` as well when replacing an existing installation. Replacements
+are staged atomically and the prior installation is retained as a backup.
+
+Crawler safety defaults block private, loopback, link-local, and reserved
+network targets, reject non-HTTP(S) URLs, re-check redirect destinations, and
+cap the crawl at 100 pages and 5 MiB per response. Use
+`--allow-private-network` only for an intentional local test.
 
 ## Configuration
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import ipaddress
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from parsel import Selector
+import yaml
 
 from ..config import CrawlConfig
 from .html_to_md import HtmlToMarkdown
@@ -31,7 +34,7 @@ class CrawlEngine:
         self.converter = HtmlToMarkdown()
         self.extractor = MetadataExtractor()
         self._client = httpx.Client(
-            follow_redirects=True,
+            follow_redirects=False,
             timeout=30.0,
             headers={"User-Agent": config.user_agent},
         )
@@ -45,8 +48,9 @@ class CrawlEngine:
         return results
 
     def _crawl(self, url: str, output_dir: Path, depth: int) -> list[CrawlResult]:
-        if depth > self.config.max_depth or url in self.visited:
+        if depth > self.config.max_depth or url in self.visited or len(self.visited) >= self.config.max_pages:
             return []
+        self._validate_url(url)
         self.visited.add(url)
         results: list[CrawlResult] = []
         try:
@@ -56,22 +60,72 @@ class CrawlEngine:
                 mod_date = self._read_last_modified(existing_md)
                 if mod_date:
                     headers["If-Modified-Since"] = mod_date
-            resp = self._client.get(url, headers=headers)
-            if resp.status_code == 304:
+            fetched = self._fetch(url, headers)
+            if fetched is None:
                 return []
-            if resp.status_code != 200:
+            final_url, status_code, response_headers, body = fetched
+            if final_url != url:
+                self.visited.add(final_url)
+            if status_code == 304:
                 return []
-            content_type = resp.headers.get("content-type", "")
+            if status_code != 200:
+                return []
+            content_type = response_headers.get("content-type", "")
             if "text/html" in content_type:
-                result = self._process_html(url, resp.text, output_dir)
+                html = body.decode(response_headers.get("content-type", "").split("charset=")[-1].strip(" ;") or "utf-8", errors="replace")
+                result = self._process_html(final_url, html, output_dir)
                 if result:
                     results.append(result)
-                links = self._extract_links(resp.text, url)
+                links = self._extract_links(html, final_url)
                 for link in links:
                     results.extend(self._crawl(link, output_dir, depth + 1))
-        except httpx.HTTPError:
+        except (httpx.HTTPError, ValueError, socket.gaierror):
             pass
         return results
+
+    def _validate_url(self, url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("crawler only permits http and https URLs")
+        if not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("crawler URL must have a host and no embedded credentials")
+        if self.config.allow_private_network:
+            return
+        try:
+            addresses = {
+                info[4][0]
+                for info in socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+            }
+        except socket.gaierror as exc:
+            raise ValueError("crawler host could not be resolved") from exc
+        for address in addresses:
+            ip = ipaddress.ip_address(address)
+            if not ip.is_global:
+                raise ValueError("crawler blocks private, loopback, link-local, and reserved addresses by default")
+
+    def _fetch(self, url: str, headers: dict[str, str]) -> tuple[str, int, httpx.Headers, bytes] | None:
+        current = url
+        for _ in range(10):
+            self._validate_url(current)
+            with self._client.stream("GET", current, headers=headers) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location")
+                    if not location:
+                        return None
+                    current = urljoin(current, location)
+                    continue
+                content_length = response.headers.get("content-length")
+                if content_length and int(content_length) > self.config.max_response_bytes:
+                    return None
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > self.config.max_response_bytes:
+                        return None
+                    chunks.append(chunk)
+                return current, response.status_code, response.headers, b"".join(chunks)
+        return None
 
     def _process_html(self, url: str, html: str, output_dir: Path) -> CrawlResult | None:
         selector = Selector(text=html)
@@ -110,17 +164,16 @@ class CrawlEngine:
                     clean.endswith(ext)
                     for ext in [".pdf", ".zip", ".tar", ".gz", ".png", ".jpg"]
                 ):
+                    try:
+                        self._validate_url(clean)
+                    except (ValueError, socket.gaierror):
+                        continue
                     links.append(clean)
         return links[:50]
 
     def _build_frontmatter(self, metadata: dict[str, str]) -> str:
-        lines = ["---"]
-        for key, value in metadata.items():
-            if value:
-                safe = value.replace('"', '\\"')
-                lines.append(f'{key}: "{safe}"')
-        lines.append("---")
-        return "\n".join(lines)
+        clean = {key: value for key, value in metadata.items() if value}
+        return "---\n" + yaml.safe_dump(clean, allow_unicode=True, sort_keys=False).rstrip() + "\n---"
 
     def _get_output_path(self, url: str, output_dir: Path) -> Path:
         parsed = urlparse(url)

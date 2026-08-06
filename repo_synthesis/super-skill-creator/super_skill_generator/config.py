@@ -16,6 +16,9 @@ class CrawlConfig:
     parallelism: int = 4
     respect_robots: bool = True
     user_agent: str = "SuperSkillGenerator/0.1"
+    max_pages: int = 100
+    max_response_bytes: int = 5 * 1024 * 1024
+    allow_private_network: bool = False
     rules: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -100,6 +103,11 @@ class SSGConfig:
                 parallelism=c.get("parallelism", cfg.crawl.parallelism),
                 respect_robots=c.get("respect_robots", cfg.crawl.respect_robots),
                 user_agent=c.get("user_agent", cfg.crawl.user_agent),
+                max_pages=c.get("max_pages", cfg.crawl.max_pages),
+                max_response_bytes=c.get("max_response_bytes", cfg.crawl.max_response_bytes),
+                allow_private_network=c.get(
+                    "allow_private_network", cfg.crawl.allow_private_network
+                ),
                 rules=c.get("rules", cfg.crawl.rules),
             )
         if "quality" in data:

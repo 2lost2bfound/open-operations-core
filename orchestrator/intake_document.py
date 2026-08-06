@@ -419,13 +419,21 @@ confidence: {metadata["confidence"]}
     return manifest_path
 
 
-def maybe_store_source(root: Path, source: Path) -> Path:
-    incoming = root / "07-Mailroom" / "incoming"
-    incoming.mkdir(parents=True, exist_ok=True)
+def maybe_store_source(root: Path, source: Path, *, secure: bool = False) -> Path:
+    incoming = root / (
+        (Path(".runtime") / "intake-quarantine")
+        if secure
+        else (Path("07-Mailroom") / "incoming")
+    )
+    incoming.mkdir(mode=0o700 if secure else 0o755, parents=True, exist_ok=True)
+    if secure:
+        incoming.chmod(0o700)
     target = incoming / source.name
     if target.exists():
         target = incoming / f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-{source.name}"
     shutil.copy2(source, target)
+    if secure:
+        target.chmod(0o600)
     return target
 
 
@@ -440,6 +448,7 @@ def build_parser() -> argparse.ArgumentParser:
               python3 orchestrator/intake_document.py notes.md
               python3 orchestrator/intake_document.py --json manual.pdf
               python3 orchestrator/intake_document.py --store tutorial.epub
+              python3 orchestrator/intake_document.py --store --secure-store suspect.docx
 
             exit codes:
               0  classified successfully
@@ -450,7 +459,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("path", help="Path to the document to classify.")
     parser.add_argument("--json", action="store_true", help="Write machine-readable JSON to stdout.")
     parser.add_argument("--no-manifest", action="store_true", help="Classify without writing a Mailroom manifest.")
-    parser.add_argument("--store", action="store_true", help="Copy the source file into 07-Mailroom/incoming/ after classification.")
+    parser.add_argument("--store", action="store_true", help="Copy the source after classification.")
+    parser.add_argument(
+        "--secure-store",
+        action="store_true",
+        help="For security_review routes, copy only to the 0700 .runtime quarantine (requires --store).",
+    )
     return parser
 
 
@@ -469,6 +483,15 @@ def main(argv: list[str] | None = None) -> int:
 
     extraction = extract_text(source)
     classification = classify(source, extraction)
+    if args.secure_store and not args.store:
+        parser.error("--secure-store requires --store")
+    if args.store and classification["route"] == "security_review" and not args.secure_store:
+        print(
+            "error: refusing to copy a secret-flagged document into normal Mailroom storage; "
+            "use --store --secure-store for the restricted quarantine",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     metadata = {
         "source_path": str(source),
         "document_type": source.suffix.lower().lstrip(".") or "unknown",
@@ -489,7 +512,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_manifest:
         metadata["manifest_path"] = str(write_manifest(root, source, metadata))
     if args.store:
-        metadata["stored_copy_path"] = str(maybe_store_source(root, source))
+        metadata["stored_copy_path"] = str(
+            maybe_store_source(root, source, secure=args.secure_store)
+        )
 
     if args.json:
         print(json.dumps(metadata, indent=2, sort_keys=True))

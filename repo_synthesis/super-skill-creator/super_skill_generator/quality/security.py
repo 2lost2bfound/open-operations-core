@@ -49,10 +49,33 @@ class SecurityScanner:
         (r"subprocess\.\w+\(", "medium", "Subprocess execution"),
         (r"os\.system\s*\(", "medium", "OS command execution"),
         (r"open\s*\(.*['\"]w", "medium", "File write operation"),
-        (r"API_KEY|SECRET|TOKEN|PASSWORD", "high", "Potential secret reference"),
         (r"sudo\s+", "medium", "Privilege escalation"),
         (r"chmod\s+777", "medium", "Overly permissive permissions"),
     ]
+    CREDENTIAL_REFERENCE = re.compile(
+        r"\b(?:API[_-]?KEY|SECRET[_-]?KEY|ACCESS[_-]?TOKEN|PASSWORD|AUTH[_-]?TOKEN)\b",
+        re.IGNORECASE,
+    )
+    CREDENTIAL_ASSIGNMENT = re.compile(
+        r"\b(?:API[_-]?KEY|SECRET[_-]?KEY|ACCESS[_-]?TOKEN|PASSWORD|AUTH[_-]?TOKEN)\b"
+        r"\s*[:=]\s*['\"]?([^'\"\s,;]+)",
+        re.IGNORECASE,
+    )
+    LIKELY_SECRET = re.compile(
+        r"(?:\bsk-[A-Za-z0-9_-]{16,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|"
+        r"\bAIza[0-9A-Za-z_-]{30,}\b|\bxox[baprs]-[0-9A-Za-z-]{20,}\b)"
+    )
+    PLACEHOLDER_MARKERS = {
+        "replace-me",
+        "example",
+        "example-key",
+        "changeme",
+        "your-key",
+        "your_token",
+        "placeholder",
+        "null",
+        "none",
+    }
 
     def scan(self, path: Path) -> SecurityReport:
         report = SecurityReport()
@@ -80,3 +103,28 @@ class SecurityScanner:
                             line=i,
                         )
                     )
+            if self.LIKELY_SECRET.search(line):
+                report.findings.append(
+                    SecurityFinding("high", "likely credential value", str(path), i)
+                )
+            reference = self.CREDENTIAL_REFERENCE.search(line)
+            if reference:
+                assignment = self.CREDENTIAL_ASSIGNMENT.search(line)
+                value = assignment.group(1).strip().lower() if assignment else ""
+                if assignment and not self._is_placeholder(value):
+                    report.findings.append(
+                        SecurityFinding("high", "likely exposed credential assignment", str(path), i)
+                    )
+                else:
+                    report.findings.append(
+                        SecurityFinding("medium", "credential reference", str(path), i)
+                    )
+
+    def _is_placeholder(self, value: str) -> bool:
+        if not value or value.startswith(("$", "<", "${")):
+            return True
+        if value.startswith(("os.environ", "getenv(", "env[")):
+            return True
+        return value in self.PLACEHOLDER_MARKERS or any(
+            marker in value for marker in ("replace-me", "example", "changeme", "placeholder")
+        )

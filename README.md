@@ -100,6 +100,11 @@ Use a real key only through a local secret manager or ignored `.env`. The reposi
 
 The classifier is intentionally a first-pass triage layer. It does not claim to understand every document, and it does not silently convert unclear material into an agent skill.
 
+`--store` refuses to copy a document classified as `security_review` into the
+normal Mailroom. For an intentional, restricted handling path, use
+`--store --secure-store`; that places the source in the ignored 0700
+`.runtime/intake-quarantine/` directory with a 0600 file mode.
+
 Install the intake dependency before handling DOCX files:
 
 ```bash
@@ -120,6 +125,12 @@ python3 -m pip install -r requirements.txt
 The platform registry includes native or adapted targets for Codex, Claude Code, OpenCode, Goose, Cursor, Windsurf, Cline, Aider, Copilot, Trae, Kiro, and Amp.
 
 The current five-phase `ssg create` pipeline is deterministic and template-based. Its phase names describe the generation workflow, not live LLM calls; it does not currently claim to synthesize a skill by sending the description to a model endpoint. Model-assisted generation remains a deliberate future integration point.
+
+Crawler access is bounded by default: only HTTP(S) is accepted, private and
+reserved network destinations (including redirects) are blocked, and crawls
+are limited to 100 pages and 5 MiB per response. `ssg install` is a dry run
+unless `--apply` is provided; replacing an existing skill additionally
+requires `--force` and preserves a backup.
 
 ### Commercial demo surface
 

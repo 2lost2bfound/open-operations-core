@@ -64,8 +64,20 @@ def create(ctx: click.Context, description: str, name: str | None, output: str |
 @click.option("--output", "-o", default=None, help="Output directory")
 @click.option("--flat", is_flag=True, help="Flat file structure")
 @click.option("--depth", "-d", default=None, type=int, help="Max crawl depth")
+@click.option("--max-pages", default=None, type=click.IntRange(min=1), help="Global page limit")
+@click.option("--max-response-bytes", default=None, type=click.IntRange(min=1024), help="Per-response byte limit")
+@click.option("--allow-private-network", is_flag=True, help="Allow private/reserved network targets (unsafe)")
 @click.pass_context
-def crawl(ctx: click.Context, urls: tuple[str, ...], output: str | None, flat: bool, depth: int | None) -> None:
+def crawl(
+    ctx: click.Context,
+    urls: tuple[str, ...],
+    output: str | None,
+    flat: bool,
+    depth: int | None,
+    max_pages: int | None,
+    max_response_bytes: int | None,
+    allow_private_network: bool,
+) -> None:
     """Crawl documentation URLs into Markdown skill references."""
     cfg: SSGConfig = ctx.obj["config"]
     out_dir = Path(output or cfg.crawl.output_dir)
@@ -73,6 +85,12 @@ def crawl(ctx: click.Context, urls: tuple[str, ...], output: str | None, flat: b
         cfg.crawl.max_depth = depth
     if flat:
         cfg.crawl.flat = True
+    if max_pages is not None:
+        cfg.crawl.max_pages = max_pages
+    if max_response_bytes is not None:
+        cfg.crawl.max_response_bytes = max_response_bytes
+    if allow_private_network:
+        cfg.crawl.allow_private_network = True
     engine = CrawlEngine(cfg.crawl)
     results = engine.crawl_all(list(urls), out_dir)
     click.echo(f"Crawled {len(results)} pages to {out_dir}")
@@ -101,28 +119,36 @@ def security(ctx: click.Context, skill_path: str) -> None:
     scanner = SecurityScanner()
     report = scanner.scan(Path(skill_path))
     click.echo(report.summary())
-    if report.severity == "critical":
+    if report.severity in {"critical", "high"}:
         sys.exit(1)
 
 
 @cli.command()
 @click.argument("skill_path", type=click.Path(exists=True))
 @click.option("--platform", "-p", multiple=True, help="Target platforms")
+@click.option("--apply", is_flag=True, help="Perform the installation; otherwise only show the plan")
+@click.option("--force", is_flag=True, help="Replace an existing installation and retain a backup")
 @click.pass_context
-def install(ctx: click.Context, skill_path: str, platform: tuple[str, ...]) -> None:
+def install(ctx: click.Context, skill_path: str, platform: tuple[str, ...], apply: bool, force: bool) -> None:
     """Install a skill to agent platform directories."""
     from .platforms import PlatformRegistry
 
     cfg: SSGConfig = ctx.obj["config"]
     targets = list(platform) if platform else cfg.platforms
+    if force and not apply:
+        raise click.UsageError("--force requires --apply")
     registry = PlatformRegistry()
     for target in targets:
         adapter = registry.get(target)
         if adapter is None:
             click.echo(f"Unknown platform: {target}", err=True)
             continue
-        adapter.install(Path(skill_path))
-        click.echo(f"Installed to {target}")
+        try:
+            target_path = adapter.install(Path(skill_path), force=force, dry_run=not apply)
+        except FileExistsError as exc:
+            raise click.ClickException(str(exc)) from exc
+        mode = "Planned" if not apply else "Installed"
+        click.echo(f"{mode} {target}: {target_path}")
 
 
 @cli.command()
@@ -143,12 +169,31 @@ def scan_deps(ctx: click.Context, skill_path: str) -> None:
 @click.option("--output", "-o", default=None, help="Output directory")
 @click.option("--depth", "-d", default=2, type=int, help="Crawl depth (default 2)")
 @click.option("--install-to", "-i", multiple=True, help="Auto-install to platforms")
+@click.option("--apply-install", is_flag=True, help="Apply --install-to; otherwise show the plan")
+@click.option("--force-install", is_flag=True, help="Replace existing auto-installations and retain backups")
+@click.option("--max-pages", default=None, type=click.IntRange(min=1), help="Global page limit")
+@click.option("--max-response-bytes", default=None, type=click.IntRange(min=1024), help="Per-response byte limit")
+@click.option("--allow-private-network", is_flag=True, help="Allow private/reserved network targets (unsafe)")
 @click.pass_context
-def reverse(ctx: click.Context, url: str, name: str | None, output: str | None, depth: int, install_to: tuple[str, ...]) -> None:
+def reverse(
+    ctx: click.Context,
+    url: str,
+    name: str | None,
+    output: str | None,
+    depth: int,
+    install_to: tuple[str, ...],
+    apply_install: bool,
+    force_install: bool,
+    max_pages: int | None,
+    max_response_bytes: int | None,
+    allow_private_network: bool,
+) -> None:
     """Reverse-engineer a website into a skill. Crawls, analyzes, generates, validates."""
     from urllib.parse import urlparse
 
     cfg: SSGConfig = ctx.obj["config"]
+    if force_install and not apply_install:
+        raise click.UsageError("--force-install requires --apply-install")
     verbose: bool = ctx.obj["verbose"]
     out_dir = Path(output or cfg.output_dir)
 
@@ -162,6 +207,12 @@ def reverse(ctx: click.Context, url: str, name: str | None, output: str | None, 
     click.echo(f"\n[1/4] Crawling (depth={depth}) ...")
     crawl_cfg = cfg.crawl
     crawl_cfg.max_depth = depth
+    if max_pages is not None:
+        crawl_cfg.max_pages = max_pages
+    if max_response_bytes is not None:
+        crawl_cfg.max_response_bytes = max_response_bytes
+    if allow_private_network:
+        crawl_cfg.allow_private_network = True
     crawl_engine = CrawlEngine(crawl_cfg)
     with secure_temporary_directory() as crawl_path:
         results = crawl_engine.crawl_all([url], crawl_path)
@@ -215,8 +266,11 @@ def reverse(ctx: click.Context, url: str, name: str | None, output: str | None, 
         for target in install_to:
             adapter = registry.get(target)
             if adapter:
-                adapter.install(result.output_path)
-                click.echo(f"  Installed to {target}")
+                target_path = adapter.install(
+                    result.output_path, force=force_install, dry_run=not apply_install
+                )
+                mode = "Installed" if apply_install else "Planned"
+                click.echo(f"  {mode} {target}: {target_path}")
             else:
                 click.echo(f"  Unknown platform: {target}", err=True)
 

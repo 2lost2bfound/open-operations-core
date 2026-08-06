@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
-from .base import PlatformAdapter
+from .base import PlatformAdapter, install_file, install_tree
 
 PLATFORM_DIRS = {
     "claude-code": ".claude/skills",
@@ -33,16 +32,11 @@ class NativeAdapter(PlatformAdapter):
         rel = PLATFORM_DIRS.get(self._platform, f".{self._platform}/skills")
         return Path.home() / rel
 
-    def install(self, skill_path: Path) -> Path:
+    def install(self, skill_path: Path, *, force: bool = False, dry_run: bool = True) -> Path:
         dest = self.get_install_dir()
-        dest.mkdir(parents=True, exist_ok=True)
         if skill_path.is_dir():
             target = dest / skill_path.name
-            if target.exists():
-                shutil.rmtree(target)
-            shutil.copytree(skill_path, target)
-            return target
+            return install_tree(skill_path, target, force=force, dry_run=dry_run)
         else:
             target = dest / skill_path.name
-            shutil.copy2(skill_path, target)
-            return target
+            return install_file(skill_path, target, force=force, dry_run=dry_run)

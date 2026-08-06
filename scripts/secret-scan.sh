@@ -15,4 +15,28 @@ if [[ -n "$matches" ]]; then
     exit 1
 fi
 
+# Inspect tracked non-text artifacts through printable strings as a second
+# boundary. This reports filenames only and never prints matched values.
+binary_matches=""
+if command -v file >/dev/null 2>&1 && command -v strings >/dev/null 2>&1; then
+    while IFS= read -r -d '' relative; do
+        absolute="$root/$relative"
+        [[ -f "$absolute" ]] || continue
+        mime="$(file --mime-type -b "$absolute")"
+        case "$mime" in
+            text/*|application/json|application/xml|application/javascript|application/x-sh)
+                continue
+                ;;
+        esac
+        if strings -a "$absolute" | grep -Eiq "$pattern"; then
+            binary_matches+="$relative"$'\n'
+        fi
+    done < <(git -C "$root" ls-files -z)
+fi
+if [[ -n "$binary_matches" ]]; then
+    printf '%s\n' 'Potential secret-shaped values found in binary artifacts:' >&2
+    printf '%s' "$binary_matches" >&2
+    exit 1
+fi
+
 printf '%s\n' 'No secret-shaped values found. Review history and binary artifacts separately before publishing.'
