@@ -4,7 +4,7 @@
 
 Open Operations Core is a small, inspectable foundation for building an AI operations command center. It brings model routing, document intake, skill generation, quality gates, and operator visibility into one modular shape—without requiring a public SaaS account or hiding the important state behind a black box.
 
-> **Status:** public-release staging build. The code is sanitized and reviewable, but this repository is not yet published.
+> **Status:** public release candidate. The code is sanitized, reviewable, and designed for local-first experimentation.
 
 [![Local-first](https://img.shields.io/badge/deployment-local--first-36c6a1?style=flat-square)](#security-and-deployment-boundary)
 [![Python](https://img.shields.io/badge/python-3.11%2B-4ea4df?style=flat-square)](#quick-start)

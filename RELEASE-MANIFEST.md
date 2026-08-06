@@ -1,6 +1,6 @@
 # Public Release Manifest
 
-Status: staging only — not pushed.
+Status: release candidate — publication approved by the owner.
 
 ## Included
 
@@ -21,5 +21,5 @@ Status: staging only — not pushed.
 
 ## Review gate
 
-Do not push until the owner has reviewed this tree and the generated secret-scan
-report. Any new file added here must be scanned again.
+The owner reviewed this tree and approved publication. Any new file added here
+must be scanned again before a subsequent release.
