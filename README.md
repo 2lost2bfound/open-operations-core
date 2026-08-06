@@ -199,6 +199,35 @@ For builders, YouTube creators, and podcast hosts, the best demonstration is a s
 
 That sequence communicates the product faster than a feature list because every screen produces a visible artifact.
 
+## Public project TODO — the build queue
+
+This is the working list for the public project. We will knock these out in
+order, keeping the personal operations hub as the reference implementation and
+promoting only tested, generic capabilities into this repository.
+
+### Now — make the core easy to run
+
+- [ ] Add a local mock-provider server so routing tests run without paid APIs.
+- [ ] Add end-to-end fixtures for document intake: skill, reference, project, and ambiguity cases.
+- [ ] Add a one-command demo runner that launches the PHP surface and a safe mock runtime.
+- [ ] Add dependency locking and a clean install matrix for Python 3.11–3.13.
+
+### Next — make it safe to extend
+
+- [ ] Define the module registry and plugin contract.
+- [ ] Add authentication and authorization reference middleware.
+- [ ] Add a persistent queue worker with explicit approval boundaries.
+- [ ] Add structured audit events with redaction tests.
+- [ ] Add configurable storage adapters for local files, SQLite, and PostgreSQL.
+
+### Later — make it compelling at scale
+
+- [ ] Add operator analytics and replayable workflow runs.
+- [ ] Add a polished browser UI for skills, jobs, routing, and Open Questions.
+- [ ] Add deployment examples for Docker Compose and a private VPS.
+- [ ] Publish a short maintainer demo and contributor walkthrough.
+- [ ] Build a design-partner workflow pack for regulated, high-context operations.
+
 ## Roadmap
 
 - [x] Sanitized public core and placeholder configuration
