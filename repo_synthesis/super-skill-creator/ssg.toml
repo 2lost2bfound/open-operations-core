@@ -1,0 +1,22 @@
+project_name = "my-skill"
+output_dir = "./output"
+platforms = ["claude-code", "cursor", "opencode"]
+
+[pipeline]
+phases = ["discovery", "design", "architecture", "detection", "implementation"]
+auto_advance = true
+strict_gates = true
+
+[crawl]
+output_dir = ".skillscache"
+flat = false
+max_depth = 3
+parallelism = 4
+user_agent = "SuperSkillGenerator/0.1"
+
+[quality]
+max_description_length = 1024
+max_name_length = 64
+require_frontmatter = true
+security_scan = true
+staleness_days = 90

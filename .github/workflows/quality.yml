@@ -1,0 +1,22 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  public-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Scan for secret-shaped values
+        run: ./scripts/secret-scan.sh
+      - name: Check Python imports
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -c "import sys; sys.path.insert(0, 'orchestrator'); import run, intake_document"
+      - name: Check CLI entrypoint syntax
+        run: python -m py_compile orchestrator/run.py orchestrator/intake_document.py

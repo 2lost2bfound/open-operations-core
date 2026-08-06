@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "super-skill-generator"
+version = "0.1.0"
+description = "Unified skill creation toolkit — generates, crawls, validates, and installs agent skills across 12+ platforms"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "httpx>=0.27",
+    "parsel>=1.9",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+ssg = "super_skill_generator.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["super_skill_generator"]
