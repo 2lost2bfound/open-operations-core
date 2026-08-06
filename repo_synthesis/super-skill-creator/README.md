@@ -4,7 +4,7 @@ Unified skill creation toolkit that synthesizes the best of three open-source pr
 
 ## What It Does
 
-- **Create skills** from natural-language descriptions via a 5-phase pipeline (Discovery → Design → Architecture → Detection → Implementation)
+- **Create skills** from natural-language descriptions via a deterministic, template-based 5-phase pipeline (Discovery → Design → Architecture → Detection → Implementation)
 - **Crawl documentation** from URLs into token-efficient Markdown with frontmatter metadata
 - **Scan dependencies** (NPM, Go, Python) and auto-generate crawl rules
 - **Validate quality** against frontmatter, size, and structural standards
@@ -18,6 +18,8 @@ pip install -e .
 ```
 
 ## Quick Start
+
+`ssg create` currently uses local heuristics and templates. It does not call an LLM endpoint; the orchestrator harness is a separate optional component.
 
 ```bash
 # Create a skill from a description

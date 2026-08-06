@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -71,7 +72,11 @@ def parse_registry() -> tuple[dict[str, list[tuple[int, str]]], list[tuple[int, 
 
 def rotation_state_path() -> Path:
     runtime = vault_root() / ".runtime"
-    runtime.mkdir(exist_ok=True)
+    runtime.mkdir(mode=0o700, exist_ok=True)
+    try:
+        runtime.chmod(0o700)
+    except OSError:
+        pass
     return runtime / "orchestrator-rotation.json"
 
 
@@ -88,16 +93,45 @@ def select_key(model: str) -> tuple[int, str]:
             state = json.loads(state_path.read_text(encoding="utf-8"))
         except Exception:
             state = {}
-        current = int(state.get(model, -1))
-        next_position = (current + 1) % len(matches)
-        state[model] = next_position
-        state_path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        # Persist the stable LLM_KEY_N index, not a list position. This keeps
+        # rotation deterministic if environment enumeration or key membership
+        # changes between calls.
+        previous_index = state.get(model)
+        indexes = [index for index, _ in matches]
+        if previous_index in indexes:
+            next_position = (indexes.index(previous_index) + 1) % len(matches)
+        else:
+            next_position = 0
         return matches[next_position]
 
     if wildcard:
         return wildcard[0]
 
     raise RuntimeError(f"No API key mapping found for requested model: {model}")
+
+
+def persist_rotation_choice(model: str, key_index: int) -> None:
+    """Persist a successful selection using restrictive, atomic file writes."""
+    state_path = rotation_state_path()
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+    state[model] = key_index
+
+    state_path.parent.mkdir(mode=0o700, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=state_path.parent, prefix=".rotation-", delete=False
+    ) as handle:
+        temporary_path = Path(handle.name)
+        handle.write(json.dumps(state, indent=2, sort_keys=True) + "\n")
+        handle.flush()
+        os.fchmod(handle.fileno(), 0o600)
+    os.replace(temporary_path, state_path)
+    try:
+        state_path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def log_key_choice(model: str, key_index: int) -> None:
@@ -115,7 +149,6 @@ def call_model(prompt: str) -> str:
         raise RuntimeError("Missing ORCHESTRATOR_BASE_URL.")
 
     key_index, api_key = select_key(model)
-    log_key_choice(model, key_index)
 
     payload = {
         "model": model,
@@ -141,7 +174,14 @@ def call_model(prompt: str) -> str:
         body = exc.read().decode("utf-8", errors="ignore")[:1000]
         raise RuntimeError(f"Model call failed with HTTP {exc.code}: {body}") from exc
 
-    return decoded["choices"][0]["message"]["content"]
+    try:
+        content = decoded["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("Model call returned an invalid chat-completion response") from exc
+
+    persist_rotation_choice(model, key_index)
+    log_key_choice(model, key_index)
+    return content
 
 
 def main(argv: list[str]) -> int:

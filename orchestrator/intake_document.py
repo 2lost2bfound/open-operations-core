@@ -17,12 +17,16 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
 
 
 EXIT_OK = 0
 EXIT_USAGE = 2
 MAX_TEXT_BYTES = 2_000_000
+CLASSIFICATION_TEXT_BYTES = 256 * 1024
+SECRET_SCAN_CHUNK_BYTES = 64 * 1024
+SECRET_SCAN_OVERLAP_BYTES = 256
 MANIFEST_VERSION = 1
 
 
@@ -198,7 +202,7 @@ def read_docx(path: Path) -> Extraction:
 
     try:
         root = ElementTree.fromstring(raw)
-    except ElementTree.ParseError:
+    except Exception:
         return Extraction("failed", "", "docx XML parse failed")
 
     pieces = []
@@ -281,11 +285,19 @@ def count_signals(text: str, words: Iterable[str]) -> int:
 
 def has_secret_signal(text: str) -> bool:
     sample = text[:MAX_TEXT_BYTES]
-    return any(pattern.search(sample) for pattern in SECRET_PATTERNS)
+    step = max(1, SECRET_SCAN_CHUNK_BYTES - SECRET_SCAN_OVERLAP_BYTES)
+    for start in range(0, len(sample), step):
+        chunk = sample[start : start + SECRET_SCAN_CHUNK_BYTES]
+        if any(pattern.search(chunk) for pattern in SECRET_PATTERNS):
+            return True
+    return False
 
 
 def classify(path: Path, extraction: Extraction) -> dict:
-    text = extraction.text
+    # Keep classification work bounded even when an extractor returns a large,
+    # repetitive, or adversarial document. Secret detection remains separate
+    # and scans the capped extraction in bounded chunks.
+    text = extraction.text[:CLASSIFICATION_TEXT_BYTES]
     reasons: list[str] = []
 
     if extraction.status != "ok" or len(text.strip()) < 80:

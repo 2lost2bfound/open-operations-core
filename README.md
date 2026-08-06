@@ -100,6 +100,12 @@ Use a real key only through a local secret manager or ignored `.env`. The reposi
 
 The classifier is intentionally a first-pass triage layer. It does not claim to understand every document, and it does not silently convert unclear material into an agent skill.
 
+Install the intake dependency before handling DOCX files:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
 ### Super-Skill Generator
 
 `repo_synthesis/super-skill-creator/` contains the reusable skill-generation package:
@@ -112,6 +118,8 @@ The classifier is intentionally a first-pass triage layer. It does not claim to 
 - `ssg scan-deps` — scan dependencies and generate crawl rules.
 
 The platform registry includes native or adapted targets for Codex, Claude Code, OpenCode, Goose, Cursor, Windsurf, Cline, Aider, Copilot, Trae, Kiro, and Amp.
+
+The current five-phase `ssg create` pipeline is deterministic and template-based. Its phase names describe the generation workflow, not live LLM calls; it does not currently claim to synthesize a skill by sending the description to a model endpoint. Model-assisted generation remains a deliberate future integration point.
 
 ### Commercial demo surface
 

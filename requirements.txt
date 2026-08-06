@@ -1,0 +1,2 @@
+# Dependencies for the document-intake harness.
+defusedxml>=0.7.1

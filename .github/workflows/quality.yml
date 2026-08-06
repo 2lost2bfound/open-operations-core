@@ -12,6 +12,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install runtime and SSG dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -e repo_synthesis/super-skill-creator
       - name: Scan for secret-shaped values
         run: ./scripts/secret-scan.sh
       - name: Check Python imports
@@ -20,3 +24,5 @@ jobs:
         run: python -c "import sys; sys.path.insert(0, 'orchestrator'); import run, intake_document"
       - name: Check CLI entrypoint syntax
         run: python -m py_compile orchestrator/run.py orchestrator/intake_document.py
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -v

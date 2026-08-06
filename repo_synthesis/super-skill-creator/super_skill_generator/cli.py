@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 import click
 
@@ -12,6 +16,17 @@ from .config import SSGConfig
 from .pipeline import PipelineEngine
 from .crawler import CrawlEngine
 from .quality import SkillValidator, SecurityScanner
+
+
+@contextmanager
+def secure_temporary_directory() -> Iterator[Path]:
+    """Yield a crawl workspace that is private to the current user."""
+    path = Path(tempfile.mkdtemp(prefix="ssg-reverse-"))
+    path.chmod(0o700)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @click.group()
@@ -131,7 +146,6 @@ def scan_deps(ctx: click.Context, skill_path: str) -> None:
 @click.pass_context
 def reverse(ctx: click.Context, url: str, name: str | None, output: str | None, depth: int, install_to: tuple[str, ...]) -> None:
     """Reverse-engineer a website into a skill. Crawls, analyzes, generates, validates."""
-    import tempfile
     from urllib.parse import urlparse
 
     cfg: SSGConfig = ctx.obj["config"]
@@ -149,8 +163,7 @@ def reverse(ctx: click.Context, url: str, name: str | None, output: str | None, 
     crawl_cfg = cfg.crawl
     crawl_cfg.max_depth = depth
     crawl_engine = CrawlEngine(crawl_cfg)
-    with tempfile.TemporaryDirectory() as crawl_dir:
-        crawl_path = Path(crawl_dir)
+    with secure_temporary_directory() as crawl_path:
         results = crawl_engine.crawl_all([url], crawl_path)
         click.echo(f"  Crawled {len(results)} pages")
         if not results:
